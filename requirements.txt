@@ -1,0 +1,29 @@
+# Core RAG + LLM + retrieval
+llama-index
+llama-index-llms-openai
+llama-index-readers-file
+llama-index-vector-stores-weaviate
+
+# Vector DB client
+weaviate-client
+
+# Environment and notebooks
+python-dotenv
+ipykernel
+
+# PDF handling
+pymupdf
+
+# Monitoring
+langfuse
+
+# Agent orchestration / memory
+langchain
+langgraph-prebuilt
+langchain-openai
+
+# Optional: HTTP requests (if you want to call APIs/tools)
+httpx
+
+# pydantic
+pydantic>=2.0.0

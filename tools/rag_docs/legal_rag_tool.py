@@ -9,64 +9,40 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-@tool(
-    name="LegalRAGRetriever",  
-    description=str(
-        "Retrieve relevant legal or policy documents from the knowledge base. "
-        "This tool does NOT generate answers, it only retrieves context."
-    )
-)
+@tool
 def legal_rag_retriever_tool(question: str, trace: Optional[any] =None) -> str:
     """
-    RAG retrieval tool with Langfuse tracing.
-    
+    Retrieve relevant legal knowledge in genral and information about the United Nations, including principles, uses, laws, articles, and policy documents
+    from the knowledge base. 
+
+    Use this tool whenever a user asks a legal question, seeks guidance on regulations, 
+    or requests information about legal principles. This tool does NOT generate answers; 
+    it only retrieves context that the LLM can then use to generate a grounded response.
+
     Args:
-        question (str): The user query.
-        trace (Langfuse trace, optional): Session-aware trace from the agent.
-    
+        question (str): The user’s legal query.
+        trace (optional): Langfuse session trace for logging and monitoring.
+
     Returns:
-        str: Formatted retrieved context for the agent.
+        str: Formatted retrieved context with source references for the LLM to use.
     """
+
     logger.info("RAG tool invoked")
     logger.debug(f"Tool input question: {question}")
 
-    # Step 1: Retrieve documents with trace
-    nodes = query_documents(question, trace=trace)
+    # Retrieve documents (NO tracing here)
+    nodes = query_documents(question)
 
     if not nodes:
         logger.warning("No relevant documents found")
         return "NO_RELEVANT_DOCUMENTS_FOUND"
 
-    # Step 2: Context formatting (wrap in Langfuse span)
-    if trace:
-        with trace.span(name="Context Formatting", input={"question": question}) as span:
-            context_blocks = []
-            for i, node in enumerate(nodes, start=1):
-                context_blocks.append(
-                    f"[SOURCE {i}] (node_id={node['node_id']}, similarity={node['similarity']})\n"
-                    f"{node['text']}"
-                )
-            span.end(output={"num_sources": len(nodes)})
-    else:
-        # Fallback if no trace is passed
-        context_blocks = []
-        for i, node in enumerate(nodes, start=1):
-            context_blocks.append(
-                f"[SOURCE {i}] (node_id={node['node_id']}, similarity={node['similarity']})\n"
-                f"{node['text']}"
-            )
+    # Format context for the LLM
+    context_blocks = []
+    for i, node in enumerate(nodes, start=1):
+        context_blocks.append(
+            f"[SOURCE {i}] (node_id={node['node_id']}, similarity={node['similarity']})\n"
+            f"{node['text']}"
+        )
 
     return "\n\n".join(context_blocks)
-
-
-# =========================
-# LangChain Tool Definition
-# =========================
-# legal_rag_tool = Tool(
-#     name="retrieve_legal_documents",
-#     func=legal_rag_retriever_tool,
-#     description=(
-#         "Retrieve relevant legal or policy documents from the knowledge base. "
-#         "This tool does NOT generate answers, it only retrieves context."
-#     ),
-# )

@@ -1,29 +1,33 @@
 # Core RAG + LLM + retrieval
-llama-index
-llama-index-llms-openai
-llama-index-readers-file
-llama-index-vector-stores-weaviate
+llama-index>=0.10.0
+llama-index-llms-openai>=0.1.0
+llama-index-readers-file>=0.1.0
+llama-index-vector-stores-weaviate>=0.1.0
 
 # Vector DB client
-weaviate-client
+weaviate-client>=4.0.0,<5.0.0
 
 # Environment and notebooks
-python-dotenv
-ipykernel
+python-dotenv>=1.0.0
+ipykernel>=6.29.0
 
 # PDF handling
-pymupdf
+pymupdf>=1.24.0
 
 # Monitoring
-langfuse
+langfuse>=2.40.0
 
 # Agent orchestration / memory
-langchain
-langgraph-prebuilt
-langchain-openai
+langchain>=0.2.0
+langgraph>=0.2.0
+langchain-openai>=0.1.0
 
-# Optional: HTTP requests (if you want to call APIs/tools)
-httpx
+# HTTP requests
+httpx>=0.27.0
 
-# pydantic
-pydantic>=2.0.0
+# Pydantic
+pydantic>=2.0.0,<3.0.0
+
+# FastAPI and ASGI server
+fastapi>=0.110.0
+uvicorn>=0.30.0

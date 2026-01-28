@@ -11,12 +11,17 @@ def start_trace(session_id: str, user_input: str):
     Returns:
         trace: Langfuse trace object
     """
-    return langfuse.trace(
-        name="react-agent-session",
-        session_id=session_id,
-        input={"user_question": user_input},
-        metadata={
-            "agent_type": "react",
-            "memory_enabled": True
-        }
+    # return langfuse.trace(
+    #     name="react-agent-session",
+    #     session_id=session_id,
+    #     input={"user_question": user_input},
+    #     metadata={
+    #         "agent_type": "react",
+    #         "memory_enabled": True
+    #     }
+    # )
+
+    return langfuse.start_trace(  # if using the latest client
+        name=f"session_{session_id}",
+        input={"question": user_input}
     )

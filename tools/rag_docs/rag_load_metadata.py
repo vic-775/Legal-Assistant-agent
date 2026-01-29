@@ -105,27 +105,48 @@ def roman_to_int(roman: str) -> int:
     
     return result
 
+ARTICLE_PATTERN = re.compile(r"Article\s+(\d+)", re.IGNORECASE)
+chapter_article_counter = {}
+
 def add_metadata_to_nodes(nodes: List[TextNode]) -> List[TextNode]:
-    """Add metadata to nodes based on their content."""
+    chapter_article_counter = {}
+
     for node in nodes:
-        # Extract metadata from node text
-        page_num = node.metadata.get("page_num", 0) if hasattr(node, 'metadata') else 0
+        page_num = node.metadata.get("page_num", 0)
         metadata = extract_metadata_from_text(node.text, page_num)
-        
-        # Add metadata to node
-        if hasattr(node, 'metadata'):
-            node.metadata = {**node.metadata, **metadata}
-        else:
-            node.metadata = metadata
-        
-        # Add some derived metadata for easier filtering
-        if node.metadata.get("instrument"):
-            node.metadata["document_type"] = "legal_instrument"
+
+        # Merge metadata
+        node.metadata = {**node.metadata, **metadata}
+
+        # ---- ARTICLE NUMBER PRESERVATION ----
+        chapter_num = node.metadata.get("chapter_number")
+
+        if chapter_num:
+            # initialize counter per chapter
+            if chapter_num not in chapter_article_counter:
+                chapter_article_counter[chapter_num] = 0
+
+            article_match = ARTICLE_PATTERN.search(node.text[:300])
+
+            if article_match:
+                chapter_article_counter[chapter_num] += 1
+                node.metadata["article_number"] = chapter_article_counter[chapter_num]
+            else:
+                # inherit article number from parent if exists
+                parent = node.relationships.get(NodeRelationship.PARENT)
+                if parent and "article_number" in parent.metadata:
+                    node.metadata["article_number"] = parent.metadata["article_number"]
+
+        # ---- DOCUMENT TYPE ----
+        if "article_number" in node.metadata:
+            node.metadata["document_type"] = "article"
+        elif node.metadata.get("section"):
+            node.metadata["document_type"] = "sub_chapter"
         elif node.metadata.get("chapter"):
             node.metadata["document_type"] = "chapter"
         else:
-            node.metadata["document_type"] = "text_section"
-    
+            node.metadata["document_type"] = "text"
+
     return nodes
 
 def get_or_create_weaviate_class(client):
@@ -133,15 +154,19 @@ def get_or_create_weaviate_class(client):
     class_name = "InternationalLawDocument"
     
     try:
-        # Check if class exists using new syntax
+        # Check if class exists
         existing_classes = client.collections.list_all()
         if class_name in existing_classes:
-            print(f"Class '{class_name}' already exists")
-            return class_name
-    except Exception as e:
-        print(f"Error checking class: {e}")
-    
-    # If class doesn't exist, create it using old API as fallback
+            print(f"Class '{class_name}' already exists — deleting it first...")
+            try:
+                client.collections.delete(class_name)
+                print(f"Deleted existing class '{class_name}' successfully.")
+            except Exception as e_del:
+                print(f"Error deleting class '{class_name}': {e_del}")
+    except Exception as e_check:
+        print(f"Error checking existing classes: {e_check}")
+
+    # Create new class
     try:
         # Try using the old schema API
         client.schema.create_class({
@@ -212,37 +237,19 @@ def get_or_create_weaviate_class(client):
             # Return class name anyway - might already exist
             return class_name
 
-def delete_existing_data(client, class_name: str):
-    """Delete all data from Weaviate class."""
+# ===============================
+# Weaviate Cleanup Functions
+# ===============================
+def delete_all_objects(client, class_name: str):
+    """
+    Delete all objects in a Weaviate class using the current v5+ client.
+    """
     try:
-        # Try using collections API first
-        collection = client.collections.get(class_name)
-        response = collection.query.delete_objects(
-            where=weaviate.classes.query.Filter.by_property("book").like("*")
-        )
-        print(f"Deleted {response} objects from '{class_name}'")
+        with client.batch as batch:
+            batch.delete_objects(class_name=class_name)
+        print(f"All objects deleted in class '{class_name}'")
     except Exception as e:
-        print(f"Error deleting with collections API: {e}")
-        try:
-            # Try batch delete as fallback
-            with client.batch() as batch:
-                batch.delete_objects(
-                    class_name=class_name,
-                    where={
-                        "path": ["book"],
-                        "operator": "Like",
-                        "valueText": "*"
-                    }
-                )
-            print(f"Deleted objects via batch from '{class_name}'")
-        except Exception as e2:
-            print(f"Error deleting with batch: {e2}")
-            # Try to delete entire class
-            try:
-                client.schema.delete_class(class_name)
-                print(f"Deleted entire class: {class_name}")
-            except Exception as e3:
-                print(f"Could not delete class: {e3}")
+        print(f"Error deleting objects: {e}")
 
 # ===============================
 # Load environment variables
@@ -289,6 +296,61 @@ nodes = add_metadata_to_nodes(nodes)  # FIXED: Removed extra (nodes)
 leaf_nodes = get_leaf_nodes(nodes)
 root_nodes = get_root_nodes(nodes)
 
+# ===============================
+# Smart chunking function
+# ===============================
+def smart_chunk_text(node: TextNode, max_chars: int = 10000, chunk_size: int = 8000, overlap: int = 1000) -> List[TextNode]:
+    """
+    Chunk article nodes intelligently:
+      - <= max_chars: keep as-is
+      - > max_chars: split into overlapping chunks
+    Each chunk preserves metadata and prepends article number and heading.
+    """
+    text = node.text
+    metadata = node.metadata.copy()
+
+    # Prepend article number and heading if present
+    prefix = ""
+    if "article_number" in metadata:
+        prefix += f"Article {metadata['article_number']}"
+        if metadata.get("section"):
+            prefix += f": {metadata['section']}"
+        prefix += "\n\n"
+    
+    full_text = prefix + text
+    if len(full_text) <= max_chars:
+        node.text = full_text
+        return [node]
+    
+    # Split into chunks with overlap
+    chunks = []
+    start = 0
+    while start < len(full_text):
+        end = start + chunk_size
+        chunk_text = full_text[start:end]
+        chunk_node = TextNode(
+            text=chunk_text,
+            metadata=metadata.copy(),
+            relationships=node.relationships.copy()
+        )
+        chunks.append(chunk_node)
+        start += chunk_size - overlap  # move with overlap
+    
+    return chunks
+
+# ===============================
+# Apply smart chunking to leaf nodes
+# ===============================
+print("\nApplying smart chunking to leaf nodes...")
+chunked_leaf_nodes = []
+for node in leaf_nodes:
+    if node.metadata.get("document_type") == "article":
+        chunked_leaf_nodes.extend(smart_chunk_text(node))
+    else:
+        chunked_leaf_nodes.append(node)  # keep other nodes as-is
+
+print(f"Total nodes after smart chunking: {len(chunked_leaf_nodes)}")
+
 print(f"\nNode Statistics:")
 print(f"Total nodes: {len(nodes)}")
 print(f"Leaf nodes (indexed): {len(leaf_nodes)}")
@@ -305,12 +367,6 @@ client = weaviate.connect_to_weaviate_cloud(
 
 # Get or create Weaviate class
 class_name = get_or_create_weaviate_class(client)
-
-# ===============================
-# DELETE EXISTING DATA
-# ===============================
-print(f"\nCleaning up existing data in '{class_name}'...")
-delete_existing_data(client, class_name)
 
 # ===============================
 # Create Weaviate vector store
@@ -340,13 +396,29 @@ embedding_model = OpenAIEmbedding(api_key=OPENAI_API_KEY)
 # ===============================
 # Index leaf nodes into Weaviate with metadata
 # ===============================
-print("\nIndexing documents with metadata...")
-index = VectorStoreIndex.from_documents(
-    leaf_nodes,
-    storage_context=storage_context,
-    embedding=embedding_model,
-    show_progress=True,
-)
+print("Indexing documents with metadata into Weaviate...")
+
+# Get a reference to the class collection
+collection = client.collections.get(class_name)
+
+for node in leaf_nodes:
+    obj_props = {
+        "content": node.text,
+        "book": node.metadata.get("book"),
+        "chapter": node.metadata.get("chapter"),
+        "chapter_number": node.metadata.get("chapter_number"),
+        "section": node.metadata.get("section"),
+        "instrument": node.metadata.get("instrument"),
+        "page_start": node.metadata.get("page_start"),
+        "page_end": node.metadata.get("page_end"),
+        "article_start": node.metadata.get("article_start"),
+        "article_end": node.metadata.get("article_end"),
+        "document_type": node.metadata.get("document_type"),
+    }
+    # Insert the object into Weaviate
+    collection.data.insert(properties=obj_props)
+
+print(f"Indexed {len(leaf_nodes)} nodes into Weaviate.")
 
 # ===============================
 # Verification

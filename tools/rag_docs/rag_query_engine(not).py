@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 from llama_index.llms.openai import OpenAI 
 from llama_index.core import PromptTemplate
-from tools.rag_docs.rag_retriver import query_documents  
+from tools.rag_docs.rag_retriver import retrieve_nodes 
 
 # Load environment variables
 load_dotenv()
@@ -33,7 +33,7 @@ def rag_pipeline(question: str):
         }
     """
     # Step 1: Retrieve relevant documents
-    nodes = query_documents(question)
+    nodes = retrieve_nodes(question)
 
     if not nodes:
         return {"answer": "No relevant documents found.", "retrieved_nodes": []}
@@ -58,8 +58,3 @@ def rag_pipeline(question: str):
 
     return {"answer": answer, "retrieved_nodes": nodes}
 
-# result = rag_pipeline("What are the Purposes of the United Nations?")
-# result = rag_pipeline("what article talks about THE SECURITY COUNCIL")
-
-# print("ANSWER:\n", result["answer"])
-# print("\nRETRIEVED NODES:", len(result["retrieved_nodes"])) 

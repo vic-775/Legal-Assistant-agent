@@ -4,7 +4,7 @@
 
 import logging
 from langchain.tools import tool
-from tools.rag_docs.rag_retriver import query_documents
+from tools.rag_docs.rag_retriver import retrieve_nodes
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ def legal_rag_retriever_tool(question: str, trace: Optional[any] =None) -> str:
     logger.debug(f"Tool input question: {question}")
 
     # Retrieve documents (NO tracing here)
-    nodes = query_documents(question)
+    nodes = retrieve_nodes(question)
 
     if not nodes:
         logger.warning("No relevant documents found")

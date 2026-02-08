@@ -1,23 +1,14 @@
 # ===============================
-# Retriever Function (with metadata filters)
+# Retriever Function (single-argument)
 # ===============================
 import os
-import sys
 import weaviate
 from llama_index.core.retrievers import AutoMergingRetriever
 from llama_index.core import StorageContext
 from llama_index.vector_stores.weaviate import WeaviateVectorStore
 from llama_index.core.indices.vector_store import VectorStoreIndex
-from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
 from dotenv import load_dotenv
 import atexit
-
-# Add project root to sys.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Logging
-import logging
-logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -31,8 +22,6 @@ client = weaviate.connect_to_weaviate_cloud(
     cluster_url=WEAVIATE_URL,
     auth_credentials=weaviate.auth.AuthApiKey(WEAVIATE_API_KEY),
 )
-
-# Close client safely at exit
 atexit.register(lambda: client.close())
 
 # ===============================
@@ -52,41 +41,26 @@ index = VectorStoreIndex.from_vector_store(
 )
 
 # ===============================
-# Retriever Function (clean version)
+# Retriever Function
 # ===============================
-def query_documents(query: str, metadata_filters: dict = None, top_k: int = 50):
+def retrieve_nodes(question, similarity_threshold=0.5, top_k=6, verbose=False):
     """
-    Query the Weaviate vector store.
+    Retrieve nodes from Weaviate + LlamaIndex using a question.
 
     Args:
-        query (str): The text query.
-        metadata_filters (dict): Optional filter dict, e.g. {"document_type": "article"}
-        top_k (int): Number of top similar results to retrieve.
+        question (str): The query string.
+        similarity_threshold (float): Minimum similarity score to keep nodes.
+        top_k (int): Number of top nodes to retrieve.
+        verbose (bool): Print debug info.
 
     Returns:
-        List[dict]: Each dict contains text, similarity_score, and metadata.
+        List[NodeWithScore]: Filtered nodes with similarity scores above threshold.
     """
-    # Convert metadata_filters to LlamaIndex MetadataFilters format
-    filters = None
-    if metadata_filters:
-        filters = MetadataFilters(
-            filters=[ExactMatchFilter(key=k, value=v) for k, v in metadata_filters.items()]
-        )
-    
-    # Create retriever
-    base_retriever = index.as_retriever(similarity_top_k=top_k, filters=filters)
-    retriever = AutoMergingRetriever(base_retriever, storage_context, verbose=False)
-    
-    # Retrieve nodes
-    nodes = retriever.retrieve(query)
+    base_retriever = index.as_retriever(similarity_top_k=top_k)
+    retriever = AutoMergingRetriever(base_retriever, storage_context, verbose=verbose)
 
-    # Build simple results
-    results = []
-    for node in nodes:
-        results.append({
-            "text": node.get_text(),
-            "similarity_score": getattr(node, "score", None),
-            "metadata": node.metadata
-        })
+    base_nodes = base_retriever.retrieve(question)
+    filtered_nodes = [node for node in base_nodes if node.score > similarity_threshold]
 
-    return results
+    return filtered_nodes
+

@@ -1,17 +1,20 @@
-from tools.rag_docs.rag_retriver import query_documents
+from tools.rag_docs.rag_retriver import retrieve_nodes
 import os
 import sys
 
 # Add project root to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-query = "What are the purposes of the United Nations?"
-metadata_filter = {"document_type": "article"}
+# ===============================
+# Example usage
+# ===============================
+question = "What are the purposes of the United Nations?"
+results = retrieve_nodes(question)
 
-results = query_documents(query, metadata_filters=metadata_filter, top_k=10)
-
-for i, res in enumerate(results, 1):
-    print(f"Result {i}")
-    print(f"Similarity Score: {res['similarity_score']}")
-    print(f"Metadata: {res['metadata']}")
-    print(f"Text:\n{res['text']}\n")
+for i, result in enumerate(results):
+    print(f"--- Node {i+1} ---")
+    print("Content:", result.node.get_content())
+    print("Similarity Score:", result.score)
+    if hasattr(result.node, "extra_info"):
+        print("Metadata:", result.node.extra_info)
+    print("\n")
